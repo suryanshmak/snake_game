@@ -1,5 +1,4 @@
 use bevy::prelude::*;
-use bevy::render::camera::Camera2d;
 use oorandom::Rand32;
 
 const FPS: u32 = 8;
@@ -40,12 +39,12 @@ impl Position {
 
 impl From<(i16, i16)> for Position {
     fn from(pos: (i16, i16)) -> Self {
-        Position {x: pos.0, y: 1}
+        Position {x: pos.0, y: pos.1}
     }
 }
 
-impl From<Position> for bevy::sprite::Rect {
-    fn from(pos: Position) -> Self {
+impl From<&Position> for bevy::sprite::Rect {
+    fn from(pos: &Position) -> Self {
         bevy::sprite::Rect {
            min: Vec2::new(pos.x as f32 * BLOCK.0 as f32, pos.y as f32 * BLOCK.1 as f32),
            max: Vec2::new(BLOCK.0 as f32, BLOCK.1 as f32),
@@ -91,21 +90,36 @@ impl Segment {
     }
 }
 
-struct Food(Position);
-
-impl Food {
-    pub fn new(pos: Position) -> Self {
-        Self(pos)
-    }
-
-    fn draw(&self) {
-    }
-}
+#[derive(Component)]
+struct Food;
 
 fn main() {
-    App::new().run();
+    App::new().insert_resource(WindowDescriptor {
+        title: "Snake".to_string(),
+        width: SCREEN.0,
+        height: SCREEN.1,
+        ..Default::default()
+    })
+    .add_plugins(DefaultPlugins)
+    .add_startup_system(setup)
+    .add_system(draw_food)
+    .run();
 }
 
-fn setup_system(mut commands: Commands) {
+fn setup(mut commands: Commands) {
+    // camera
     commands.spawn_bundle(OrthographicCameraBundle::new_2d());
+
+}
+
+fn draw_food(mut commands: Commands, query: Query<(&Position, With<Food>)>) {
+    // if let (pos, _) = query.single_mut() {
+        commands.spawn_bundle(SpriteBundle {
+            sprite: Sprite {
+                color: Color::rgba(0.0, 0.0, 1.0, 1.0),
+                ..default()
+            },
+            ..default()
+        });
+    // }
 }
