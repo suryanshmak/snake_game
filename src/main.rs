@@ -1,10 +1,12 @@
-use bevy::prelude::*;
+use std::collections::LinkedList;
+
+use ggez::{ graphics, input::keyboard::KeyCode, Context};
 use oorandom::Rand32;
 
 const FPS: u32 = 8;
 
 // define sizes
-const BOARD: (u32, u32) = (40, 40);
+const BOARD: (i16, i16) = (40, 40);
 const BLOCK: (u32, u32) = (32, 32);
 
 const SCREEN: (f32, f32) = (
@@ -12,7 +14,7 @@ const SCREEN: (f32, f32) = (
     BOARD.1 as f32 * BLOCK.1 as f32,
 );
 
-#[derive(Component, Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 struct Position { x: i16, y: i16 }
 
 impl Position {
@@ -29,26 +31,28 @@ impl Position {
 
     pub fn new_from_move(pos: Position, dir: Direction) -> Self {
         match dir {
-            Direction::Up => Position::new(pos.x, (pos.y - 1).rem_euclid(BOARD.1 as i16)),
-            Direction::Down => Position::new(pos.x, (pos.y + 1).rem_euclid(BOARD.1 as i16)),
-            Direction::Left => Position::new((pos.x - 1).rem_euclid(BOARD.0 as i16), pos.y),
-            Direction::Right => Position::new((pos.x + 1).rem_euclid(BOARD.0 as i16), pos.y),
+            Direction::Up => Position::new(pos.x, (pos.y - 1).rem_euclid(BOARD.1)),
+            Direction::Down => Position::new(pos.x, (pos.y + 1).rem_euclid(BOARD.1)),
+            Direction::Left => Position::new((pos.x - 1).rem_euclid(BOARD.0), pos.y),
+            Direction::Right => Position::new((pos.x + 1).rem_euclid(BOARD.0), pos.y),
         }
     }
 }
 
 impl From<(i16, i16)> for Position {
     fn from(pos: (i16, i16)) -> Self {
-        Position {x: pos.0, y: pos.1}
+        Position {x: pos.0, y: 1}
     }
 }
 
-impl From<&Position> for bevy::sprite::Rect {
-    fn from(pos: &Position) -> Self {
-        bevy::sprite::Rect {
-           min: Vec2::new(pos.x as f32 * BLOCK.0 as f32, pos.y as f32 * BLOCK.1 as f32),
-           max: Vec2::new(BLOCK.0 as f32, BLOCK.1 as f32),
-        }
+impl From<Position> for graphics::Rect {
+    fn from(pos: Position) -> Self {
+        graphics::Rect::new_i32(
+           pos.x as i32 * BLOCK.0 as i32, 
+           pos.y as i32 * BLOCK.1 as i32,
+           BLOCK.0 as i32,
+           BLOCK.1 as i32,
+        )
     }
 }
 
@@ -84,42 +88,167 @@ impl Direction {
 #[derive(Clone, Copy, Debug)]
 struct Segment(Position);
 
-impl Segment {
-    pub fn new(pos: Position) -> Self {
-        Self(pos)
+struct Food(Position);
+
+impl Food {
+    fn draw(&self, canvas: &mut graphics::Canvas) {
+        canvas.draw(&graphics::Quad, graphics::DrawParam::new().dest_rect(self.0.into()).color([0.0, 0.0, 1.0, 1.0]));
     }
 }
 
-#[derive(Component)]
-struct Food;
+struct Snake {
+    head: Segment,
+    body: LinkedList<Segment>,
+    dir: Direction,
+    last_dir: Direction,
+    next_dir: Option<Direction>,
+    touched: Option<Touched>,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Touched {
+    Body,
+    Food
+}
+
+impl Snake {
+    fn new(pos: Position) -> Self {
+        let mut body = LinkedList::new();
+
+        body.push_back(Segment((pos.x-1, pos.y).into()));
+
+        Self {
+            head: Segment(pos),
+            body,
+            dir: Direction::Right,
+            last_dir: Direction::Right,
+            next_dir: None,
+            touched: None,
+        }
+    }
+
+    fn ate_food(&self, food: &Food) -> bool {
+        self.head.0 == food.0
+    }
+
+    fn eats_body(&self) -> bool {
+        self.body.iter().any(|segment| segment.0 == self.head.0)
+    }
+
+    fn update(&mut self, food: &Food) {
+        if self.last_dir == self.dir && self.next_dir.is_some() {
+            self .dir = self.next_dir.unwrap();
+            self.next_dir = None;
+        }
+
+        let new_head_pos = Position::new_from_move(self.head.0, self.dir);
+
+        let new_head = Segment(new_head_pos);
+
+        self.body.push_front(new_head);
+
+        self.head = new_head;
+
+        if self.eats_body() {
+            self.touched = Some(Touched::Body);
+        } else if self.ate_food(food) {
+            self.touched = Some(Touched::Food);
+        } else {
+            self.touched = None;
+        }
+
+        if self.touched.is_none() {
+            self.body.pop_back();
+        }
+
+        self.last_dir = self.dir;
+    }
+
+    fn draw(&self, canvas: &mut graphics::Canvas) {
+        canvas.draw(&graphics::Quad, graphics::DrawParam::new().dest_rect(self.head.0.into()).color([1.0, 0.5, 0.0, 1.0]));
+        for segment in self.body.iter() {
+            canvas.draw(&graphics::Quad, graphics::DrawParam::new().dest_rect(segment.0.into()).color([1.0, 0.5, 0.0, 1.0]));
+        }
+    }
+}
+
+struct GameState {
+    over: bool,
+    rng: Rand32,
+    snake: Snake,
+    food: Food,
+}
+
+impl GameState {
+    fn new() -> Self {
+        let snake = Snake::new((BOARD.0 / 4, BOARD.1 / 2).into());
+
+        let mut seed: [u8; 8] = [0; 8];
+        getrandom::getrandom(&mut seed[..]).expect("Failed to get random seed");
+
+        let mut rng = Rand32::new(u64::from_ne_bytes(seed));
+        
+        let food = Food(Position::random(&mut rng, BOARD.0, BOARD.1));
+
+        Self { over: false, rng, snake, food }
+    }
+}
+
+impl ggez::event::EventHandler for GameState {
+    fn update(&mut self, ctx: &mut Context) -> Result<(), ggez::GameError> {
+        while ctx.time.check_update_time(FPS) {
+            if !self.over {
+                self.snake.update(&self.food);
+
+                if let Some(touched) = self.snake.touched {
+                    match touched {
+                        Touched::Body => self.over = true,
+                        Touched::Food => {
+                            self.food = Food(Position::random(&mut self.rng, BOARD.0, BOARD.1));
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn draw(&mut self, ctx: &mut Context) -> Result<(), ggez::GameError> {
+        let mut canvas = graphics::Canvas::from_frame(ctx, graphics::CanvasLoadOp::Clear([0.0, 1.0, 0.0, 1.0].into()));
+
+        self.food.draw(&mut canvas);
+        self.snake.draw(&mut canvas);
+
+        canvas.finish(ctx)?;
+
+        ggez::timer::yield_now();
+        Ok(())
+    }
+
+    fn key_down_event(
+            &mut self,
+            _ctx: &mut Context,
+            input: ggez::input::keyboard::KeyInput,
+            _repeated: bool
+        ) -> Result<(), ggez::GameError> {
+            if let Some(dir) = input.keycode.and_then(Direction::from_key) {
+                if self.snake.dir != self.snake.last_dir && self.snake.dir != dir.inverse() {
+                    self.snake.next_dir = Some(dir);
+                } else {
+                    self.snake.dir = dir; 
+                }
+            }
+        Ok(())
+    }
+}
 
 fn main() {
-    App::new().insert_resource(WindowDescriptor {
-        title: "Snake".to_string(),
-        width: SCREEN.0,
-        height: SCREEN.1,
-        ..Default::default()
-    })
-    .add_plugins(DefaultPlugins)
-    .add_startup_system(setup)
-    .add_system(draw_food)
-    .run();
-}
+    let (ctx, event_loop) = ggez::ContextBuilder::new("snake", "suryanshmak")
+    .window_setup(ggez::conf::WindowSetup::default().title("Snake"))
+    .window_mode(ggez::conf::WindowMode::default().dimensions(SCREEN.0, SCREEN.1))
+    .build()
+    .expect("Failed to initialize ggez");
 
-fn setup(mut commands: Commands) {
-    // camera
-    commands.spawn_bundle(OrthographicCameraBundle::new_2d());
-
-}
-
-fn draw_food(mut commands: Commands, query: Query<(&Position, With<Food>)>) {
-    // if let (pos, _) = query.single_mut() {
-        commands.spawn_bundle(SpriteBundle {
-            sprite: Sprite {
-                color: Color::rgba(0.0, 0.0, 1.0, 1.0),
-                ..default()
-            },
-            ..default()
-        });
-    // }
+    let state = GameState::new();
+    ggez::event::run(ctx, event_loop, state);
 }
