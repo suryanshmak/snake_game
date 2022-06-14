@@ -137,7 +137,7 @@ impl Snake {
 
     fn update(&mut self, food: &Food) {
         if self.last_dir == self.dir && self.next_dir.is_some() {
-            self .dir = self.next_dir.unwrap();
+            self.dir = self.next_dir.unwrap();
             self.next_dir = None;
         }
 
@@ -145,7 +145,7 @@ impl Snake {
 
         let new_head = Segment(new_head_pos);
 
-        self.body.push_front(new_head);
+        self.body.push_front(self.head);
 
         self.head = new_head;
 
