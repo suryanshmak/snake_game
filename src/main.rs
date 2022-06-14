@@ -24,8 +24,8 @@ impl Position {
 
     pub fn random(rng: &mut Rand32, max_x: i16, max_y: i16) -> Self {
         (
-           rng.rand_range(0..(max_x as u32)) as i16,
-           rng.rand_range(0..(max_y as u32)) as i16
+           rng.rand_range(0..max_x as u32) as i16,
+           rng.rand_range(0..max_y as u32) as i16
         ).into()
     }
 
@@ -41,7 +41,7 @@ impl Position {
 
 impl From<(i16, i16)> for Position {
     fn from(pos: (i16, i16)) -> Self {
-        Position {x: pos.0, y: 1}
+        Position {x: pos.0, y: pos.1}
     }
 }
 
@@ -92,7 +92,7 @@ struct Food(Position);
 
 impl Food {
     fn draw(&self, canvas: &mut graphics::Canvas) {
-        canvas.draw(&graphics::Quad, graphics::DrawParam::new().dest_rect(self.0.into()).color([0.0, 0.0, 1.0, 1.0]));
+        canvas.draw(&graphics::Quad, graphics::DrawParam::new().dest_rect(self.0.into()).color([1.0, 1.0, 1.0, 1.0]));
     }
 }
 
@@ -183,8 +183,8 @@ impl GameState {
     fn new() -> Self {
         let snake = Snake::new((BOARD.0 / 4, BOARD.1 / 2).into());
 
-        let mut seed: [u8; 8] = [0; 8];
-        getrandom::getrandom(&mut seed[..]).expect("Failed to get random seed");
+        let mut seed =  [0u8; 8];
+        getrandom::getrandom(&mut seed).expect("Failed to get random seed");
 
         let mut rng = Rand32::new(u64::from_ne_bytes(seed));
         
@@ -214,7 +214,7 @@ impl ggez::event::EventHandler for GameState {
     }
 
     fn draw(&mut self, ctx: &mut Context) -> Result<(), ggez::GameError> {
-        let mut canvas = graphics::Canvas::from_frame(ctx, graphics::CanvasLoadOp::Clear([0.0, 1.0, 0.0, 1.0].into()));
+        let mut canvas = graphics::Canvas::from_frame(ctx, graphics::CanvasLoadOp::Clear([0.0, 0.0, 0.0, 1.0].into()));
 
         self.food.draw(&mut canvas);
         self.snake.draw(&mut canvas);
